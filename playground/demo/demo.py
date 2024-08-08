@@ -2,7 +2,7 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 import gradio as gr
-from openai import OpenAI 
+from openai import OpenAI, AzureOpenAI
 import pdb
 # import time
 import cv2
@@ -29,8 +29,8 @@ from transformers import TextStreamer
 from llava.file_utils import (
     is_valid_video_filename, sample_frames, load_image, 
     convert_doc_to_images, extract_text_from_doc, 
-    encode_image_gpt, process_video_gpt,
-    PDF_PROMPT, PDF_PROMPT)
+    encode_image_gpt, process_video_gpt, extract_pdf_images_gpt,
+    PDF_PROMPT)
 
 class InferenceDemo(object):
     def __init__(self,args, model_path,tokenizer, model, image_processor, context_len, model_in_use) -> None:
@@ -58,17 +58,17 @@ class InferenceDemo(object):
         self.gpt_conversation = [
             {"role": "system", "content": "You are a helpful assistant."}
         ]
+        self.last_history_point = 0
         self.num_frames = args.num_frames
         self.seconds_per_frame = args.seconds_per_frame
 
-def construct_gpt_conversation(history):
-    return None
 
 def clear_history(history):
     our_chatbot.conversation = conv_templates[our_chatbot.conv_mode].copy()
     our_chatbot.gpt_conversation = [
         {"role": "system", "content": "You are a helpful assistant."}
     ]
+    our_chatbot.last_history_point = 0
     return None
 
 def change_model(model_name):
@@ -104,15 +104,14 @@ def add_message(history, message):
     return history, gr.MultimodalTextbox(value=None, interactive=False)
 
 def bot(history):
-    pdb.set_trace()
-    text=history[-1][0]
-    images_this_term=[]
-    text_this_term=''
-    num_new_images = 0
-    for i,message in enumerate(history[:-1]):
-        if type(message[0]) is tuple:
-            images_this_term.append(message[0][0])
-    if our_chatbot.model_in_use == "LLaVA-Interleave-qwen-7B":             
+    if our_chatbot.model_in_use == "LLaVA-Interleave-qwen-7B":          
+        text=history[-1][0]
+        images_this_term=[]
+        text_this_term=''
+        num_new_images = 0
+        for i,message in enumerate(history[:-1]):
+            if type(message[0]) is tuple:
+                images_this_term.append(message[0][0])   
         # for message in history[-i-1:]:
         #     images_this_term.append(message[0][0])
 
@@ -128,7 +127,7 @@ def bot(history):
             elif f.endswith(".pdf"):
                 pdf_images = convert_doc_to_images(f)
                 image_list += pdf_images
-                pdf_text.append([extract_text_from_doc(f)])
+                pdf_text.append(extract_text_from_doc(f))
                 num_new_images += len(pdf_images)
             else:
                 image_list.append(load_image(f))
@@ -161,7 +160,6 @@ def bot(history):
         # import pdb;pdb.set_trace()
         with torch.inference_mode():
             output_ids = our_chatbot.model.generate(input_ids, images=image_tensor, do_sample=True, temperature=0.2, max_new_tokens=1024, streamer=streamer, use_cache=False, stopping_criteria=[stopping_criteria])
-
         outputs = our_chatbot.tokenizer.decode(output_ids[0]).strip()
         if outputs.endswith(stop_str):
             outputs = outputs[:-len(stop_str)]
@@ -169,30 +167,32 @@ def bot(history):
     
         history[-1]=[text,outputs]
     elif our_chatbot.model_in_use.startswith("gpt"):
+        text=history[-1][0]
+        images_this_term=[]
+        num_new_images = 0
+        for i,message in enumerate(history[our_chatbot.last_history_point:-1]):
+            if type(message[0]) is tuple:
+                images_this_term.append(message[0][0])
         if client is None:
             print("Model not found")
         else:
-            round = len(our_chatbot.gpt_conversation)
             user_content = []  
-            img_id = 0
             for f in images_this_term:
                 if is_valid_video_filename(f):
                     base64Frames = process_video_gpt(f, seconds_per_frame=our_chatbot.seconds_per_frame)
-                    user_content.append("These are the frames from the video.")
-                    user_content.extend(*map(lambda x: {"type": "image_url", "image_url": {"url": f'data:image_video/jpg;base64,{x}', "detail": "low"}}, base64Frames))
+                    user_content.append({"type": "text", "content": "These are the frames from the video."})
+                    user_content.extend([*map(lambda x: {"type": "image_url", "image_url": {"url": f'data:image/jpg;base64,{x}', "detail": "low"}}, base64Frames)])
                 elif f.endswith(".pdf"):
-                    pdf_images = convert_doc_to_images(f)
-                    image_list += pdf_images
+                    pdf_images = extract_pdf_images_gpt(f)
                     pdf_text = extract_text_from_doc(f)
-                    user_content.append(*map(lambda x: {"type": "image_url", 
-                                        "image_url": {"url": f'data:image_pdf/jpg;base64,{x}', "detail": "low"}}, pdf_images))
+                    user_content.extend([*map(lambda x: {"type": "image_url", 
+                                        "image_url": {"url": f'data:image/jpg;base64,{x}', "detail": "low"}}, pdf_images)])
                     user_content.append({"type": "text", "content": pdf_text + "\n" + PDF_PROMPT})
-                    
                 else:
-                    user_content.append({"type": "image_url", "image_url": encode_image_gpt(f)})
+                    user_content.append({"type": "image_url", "image_url":{"url":f'data:image/jpg;base64,{encode_image_gpt(f)}', "detail": "low"} })
             user_content.append({"type": "text", "content": text})
             our_chatbot.gpt_conversation.append({"role": "user", "content": user_content})
-            pdb.set_trace()
+            
             response = client.chat.completions.create(
                     model=our_chatbot.model_in_use,
                     temperature=0,
@@ -200,8 +200,10 @@ def bot(history):
                     max_tokens=300,
                     top_p=0.1
             )
-            our_chatbot.gpt_conversation.append({"role": "assistant", "content": response["choices"][0]["message"]})
-            history[-1]=[text,response["choices"][0]["message"]]
+            our_chatbot.last_history_point = len(history)
+            our_chatbot.gpt_conversation.append({"role": "assistant", "content": response.choices[0].message.content})
+            history[-1]=[text,response.choices[0].message.content]
+            print(history[-1][-1])
     else:
         print("Model not found")
     
@@ -259,12 +261,8 @@ with gr.Blocks() as demo:
         gr.Examples(examples=[
             [{"files": [f"{cur_dir}/examples/code1.jpeg",f"{cur_dir}/examples/code2.jpeg"], "text": "Please pay attention to the movement of the object from the first image to the second image, then write a HTML code to show this movement."}],
             [{"files": [f"{cur_dir}/examples/shub.jpg",f"{cur_dir}/examples/shuc.jpg",f"{cur_dir}/examples/shud.jpg"], "text": "what is fun about the images?"}],
-            [{"files": [f"{cur_dir}/examples/iphone-15-price-1024x576.jpg",f"{cur_dir}/examples/dynamic-island-1024x576.jpg",f"{cur_dir}/examples/iphone-15-colors-1024x576.jpg",f"{cur_dir}/examples/Iphone-15-Usb-c-charger-1024x576.jpg",f"{cur_dir}/examples/A-17-processors-1024x576.jpg"], "text": "The images are the PPT of iPhone 15 review. can you summarize the main information?"}],
-            [{"files": [f"{cur_dir}/examples/fangao3.jpeg",f"{cur_dir}/examples/fangao2.jpeg",f"{cur_dir}/examples/fangao1.jpeg"], "text": "Do you kown who draw these paintings?"}],
-            [{"files": [f"{cur_dir}/examples/oprah-winfrey-resume.png",f"{cur_dir}/examples/steve-jobs-resume.jpg"], "text": "Hi, there are two candidates, can you provide a brief description for each of them for me?"}],
-            [{"files": [f"{cur_dir}/examples/original_bench.jpeg",f"{cur_dir}/examples/changed_bench.jpeg"], "text": "How to edit image1 to make it look like image2?"}],
-            [{"files": [f"{cur_dir}/examples/twitter2.jpeg",f"{cur_dir}/examples/twitter3.jpeg",f"{cur_dir}/examples/twitter4.jpeg"], "text": "Please write a twitter blog post with the images."}],
-            [{"files": [f"{cur_dir}/examples/twitter3.jpeg",f"{cur_dir}/examples/twitter4.jpeg"], "text": "Please write a twitter blog post with the images."}],
+            [{"files": [f"{cur_dir}/examples/tokyo_people.mp4"], "text": "Please describe the given video."}],
+            [{"files": [f"{cur_dir}/examples/FYPPG_Contest2023_Rundown.pdf"], "text": "Please describe the content in this pdf."}],
             # [{"files": [f"playground/demo/examples/lion1_.mp4",f"playground/demo/examples/lion2_.mp4"], "text": "The input contains two videos, the first half is the first video and the second half is the second video. What is the difference between the two videos?"}],
             
 
@@ -292,19 +290,36 @@ if __name__ == "__main__":
     argparser.add_argument("--load-4bit", action="store_true")
     argparser.add_argument("--debug", action="store_true")
     argparser.add_argument("--gpt_api_key", type=str, default=None)
+    argparser.add_argument("--gpt_api_base", type=str, default=None)
     
     args = argparser.parse_args()
     model_path = args.model_path
     filt_invalid="cut"
     model_name = get_model_name_from_path(args.model_path)
     model_in_use = "LLaVA-Interleave-qwen-7B"
-    tokenizer, model, image_processor, context_len = load_pretrained_model(args.model_path, args.model_base, model_name, args.load_8bit, args.load_4bit)
+    if model_path is None:
+        model_in_use = "gpt-4o"
+        tokenizer, model, image_processor, context_len = None, None, None, None
+    else:
+        model_in_use = "LLaVA-Interleave-qwen-7B"
+        tokenizer, model, image_processor, context_len = load_pretrained_model(args.model_path, args.model_base, model_name, args.load_8bit, args.load_4bit)
+    
+    if model_in_use == "gpt-4o" and args.gpt_api_key is None:
+        raise ValueError("Please provide gpt api key when local model is not provided.")
+    client = None
     if args.gpt_api_key is not None:
-        print("Got api. Create gpt-4o client")
-        base_url = "https://vip.yi-zhan.top/v1"
-        client = OpenAI(api_key=args.gpt_api_key, 
-                        base_url=base_url)
-        # client = OpenAI(api_key=args.gpt_api)
+        print("Got api. Create OpenAI client...")
+        if args.gpt_api_base is not None:
+            if "azure" in args.gpt_api_base:
+                client = AzureOpenAI(
+                        api_key = args.gpt_api_key,
+                        azure_endpoint = args.gpt_api_base,
+                        api_version = "2024-06-01"
+                    )
+            else:
+                raise ValueError("Other api base is not implemented.")
+        else:
+            client = OpenAI(api_key=args.gpt_api)
     our_chatbot = InferenceDemo(args, model_path, tokenizer, model, image_processor, context_len, model_in_use)
     # import pdb;pdb.set_trace()
     try:
