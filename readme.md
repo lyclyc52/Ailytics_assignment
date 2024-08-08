@@ -60,3 +60,6 @@ Both GPT-4o and LLaVA-Interleave support image queries and video queries
 
 ## Task 4: Finetuning model
 
+To finetune LLaVA model, prepare the related images and the instructions related to the images. The instructions are the task that the LLM are expected to achieve. Also, you need the ground truth output. Usually, LoRA is used in finetuning since it uses less parameters and requires less GPU resources. I wrote some sample code before (See this [link](https://huggingface.co/lyclyc52/llava_finetune/tree/main)).
+
+To finetune GPT, please refer to [this](https://github.com/openai/openai-cookbook/tree/main/examples/fine-tuned_qa)
