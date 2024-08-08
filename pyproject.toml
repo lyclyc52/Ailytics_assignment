@@ -24,16 +24,11 @@ standalone = [
     "ftfy",
 ]
 
-inference = [
+train = [
     "llava[standalone]",
-    "openai",
-    "moviepy",
-    "ipython"
-    "pdf2image",
-    "pdfminer",
     "open_clip_torch",
     "fastapi",
-    "gradio",
+    "gradio==4.40.0",
     "markdown2[all]",
     "numpy",
     "requests",
@@ -50,7 +45,7 @@ inference = [
     "sentencepiece~=0.1.99",
     "einops==0.6.1",
     "einops-exts==0.0.4",
-    "gradio_client==0.2.9",
+    "gradio",
     "pydantic==1.10.8",
     "timm",
     "hf_transfer",
