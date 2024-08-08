@@ -277,7 +277,7 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--server_name", default="0.0.0.0", type=str)
     argparser.add_argument("--port", default="6123", type=str)
-    argparser.add_argument("--model_path", default="", type=str)
+    argparser.add_argument("--model_path", default=None, type=str)
     # argparser.add_argument("--model-path", type=str, default="facebook/opt-350m")
     argparser.add_argument("--model-base", type=str, default=None)
     argparser.add_argument("--num-gpus", type=int, default=1)

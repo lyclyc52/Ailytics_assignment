@@ -9,7 +9,6 @@ from pdf2image.exceptions import (
 from pdfminer.high_level import extract_text
 import cv2
 from io import BytesIO
-from IPython.display import Image, display, Audio, Markdown
 import base64
 from moviepy.editor import VideoFileClip
 import time
@@ -54,6 +53,7 @@ def extract_pdf_images_gpt(pdf_path):
 
 def process_video_gpt(video_path, seconds_per_frame=2):
     base64Frames = []
+    base_video_path, _ = os.path.splitext(video_path)
 
     video = cv2.VideoCapture(video_path)
     total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -71,6 +71,7 @@ def process_video_gpt(video_path, seconds_per_frame=2):
         base64Frames.append(base64.b64encode(buffer).decode("utf-8"))
         curr_frame += frames_to_skip
     video.release()
+
     print(f"Extracted {len(base64Frames)} frames")
     return base64Frames
 
