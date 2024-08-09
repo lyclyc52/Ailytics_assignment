@@ -21,7 +21,7 @@ pip install flash-attn --no-build-isolation
 This is the simple bash script to run the project.
 - If you don't want to use the local LLM, ignore `--model_path`.
 - If you don't want to use GPT, ignore `--gpt_api_key`.
-- If you don't need a new endpoint for GPT, ignore `--gpt_api_base`. Since I am in Hong Kong, I cannot use the official OpenAI GPT-4o. Instead I use Azunre server, which needs a new endpoint. 
+- If you don't need a new endpoint for GPT, ignore `--gpt_api_base`. Since I am in Hong Kong, I cannot use the official OpenAI GPT-4o. Instead I use Azure server, which needs a new endpoint. 
 
 ```bash
 # !/bin/bash
